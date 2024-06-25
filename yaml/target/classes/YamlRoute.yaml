@@ -1,0 +1,13 @@
+- route:
+       from:
+       uri: "file:files/Input"
+       steps:
+         - to:
+             uri: "file:files/Output" 
+      
+   
+    #  from:
+   # uri: "timer:tick?period=1s"
+   # steps:
+    #  - to:
+      #    uri: "telegram:bots?authorizationToken=XXX"    
