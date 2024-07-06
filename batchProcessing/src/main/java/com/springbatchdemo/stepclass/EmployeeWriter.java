@@ -1,32 +1,47 @@
 package com.springbatchdemo.stepclass;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.List;
-
+import javax.sql.DataSource;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class EmployeeWriter implements ItemWriter<List<String>> {
+public class EmployeeWriter implements ItemWriter<List<Employee>> {
 	Log log = LogFactory.getLog(EmployeeWriter.class);
 
+	@Autowired
+	DataSource dataSource;
+
 	@Override
-	public void write(Chunk<? extends List<String>> chunk) throws Exception {
-		try (BufferedWriter writer = new BufferedWriter(new FileWriter("file/Input/employee.csv"))) {
-			for (List<String> linesItem : chunk) {
-				for (String line : linesItem) {
-					writer.write(line);
-					writer.newLine();
-					log.error("Success");
+	public void write(Chunk<? extends List<Employee>> chunk) throws Exception {
+		String query = "update employee set Is_Sync =? , Status=? where Is_Sync =?";
+
+		boolean status = true;
+		String is_Sync = "No";
+
+		try {
+			Connection con = dataSource.getConnection();
+			PreparedStatement pst = con.prepareStatement(query);
+			for (List<Employee> list : chunk) {
+				for (Employee data : list) {
+					pst.setString(1, data.getIs_Sync());
+					pst.setBoolean(2, status);
+					pst.setString(3, is_Sync);
 				}
 			}
-
+			pst.executeUpdate();
+			log.error("!!!!! Updated successfully !!!!!");
+			con.close();
 		} catch (Exception e) {
-			log.error("Invalid Request " + e);
+			log.error("Unable to update", e);
+			throw new RuntimeException();
 		}
+
 	}
 }

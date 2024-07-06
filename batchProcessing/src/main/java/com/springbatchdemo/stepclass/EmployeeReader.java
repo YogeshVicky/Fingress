@@ -19,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
-
 @Configuration
 @Component
 public class EmployeeReader implements ItemReader<List<Employee>> {
@@ -30,7 +29,7 @@ public class EmployeeReader implements ItemReader<List<Employee>> {
 
 	private ResultSet resultSet;
 	private boolean jobState = false;
-	String query = "Select EmployeeId,EmployeeName,Is_Sync from employee where Is_Sync ='No'";
+	String query = "Select Is_Sync from employee where Is_Sync ='No'";
 
 	public List<Employee> read()
 			throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
@@ -56,12 +55,7 @@ public class EmployeeReader implements ItemReader<List<Employee>> {
 
 	private Employee mapRow(ResultSet rs) throws SQLException {
 		Employee employee = new Employee();
-		employee.setEmployeeId(rs.getInt("EmployeeId"));
-		employee.setEmployeeName(rs.getString("EmployeeName"));
-		//employee.setEmployeeSalary(rs.getDouble("EmployeeSalary"));
-		//employee.setDate_Of_Joining(rs.getDate("date_Of_Joining"));
 		employee.setIs_Sync(rs.getString("Is_Sync"));
-		//employee.setStatus(rs.getBoolean("Status"));
 		return employee;
 	}
 
