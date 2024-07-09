@@ -1,0 +1,290 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:batch="http://www.springframework.org/schema/batch"
+	xmlns:task="http://www.springframework.org/schema/task"
+	xmlns:util="http://www.springframework.org/schema/util"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/batch
+ http://www.springframework.org/schema/batch/spring-batch-2.2.xsd
+ http://www.springframework.org/schema/beans
+ http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+ http://www.springframework.org/schema/util
+ http://www.springframework.org/schema/util/spring-util-3.2.xsd">
+
+	<batch:job id="employeeJob">
+		<batch:step id="step1">
+			<batch:tasklet>
+				<batch:chunk reader="employeeReader"
+					processor="employeeProcessor" writer="employeeWriter"
+					commit-interval="10">
+				</batch:chunk>
+			</batch:tasklet>
+		</batch:step>
+	</batch:job>
+
+	<bean id="employeeReader"
+		class="com.springbatchdemo.stepclass.EmployeeReader" />
+	<bean id="employeeProcessor"
+		class="com.springbatchdemo.stepclass.EmployeeProcessor" />
+	<bean id="employeeWriter"
+		class="com.springbatchdemo.stepclass.EmployeeWriter" />
+
+	<bean id="dataSource"
+		class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+		<property name="driverClassName"
+			value="com.mysql.cj.jdbc.Driver" />
+		<property name="url"
+			value="jdbc:mysql://localhost:3307/employee" />
+		<property name="username" value="root" />
+		<property name="password" value="root" />
+	</bean>
+
+	<bean id="jobRepository"
+		class="org.springframework.batch.core.repository.support.JobRepositoryFactoryBean">
+		<property name="databaseType" value="MySQL"/>
+		<property name="dataSource" ref="dataSource" />
+		<property name="transactionManager" ref="transactionManager" />
+	</bean>
+
+	<bean id="jobLauncher"
+		class="org.springframework.batch.core.launch.support.TaskExecutorJobLauncher">
+		<property name="jobRepository" ref="jobRepository" />
+	</bean>
+	<bean id="transactionManager"
+		class="org.springframework.batch.support.transaction.ResourcelessTransactionManager" />
+</beans>
+
+###########################################################
+
+package com.springbatchdemo.stepclass;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import javax.sql.DataSource;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.annotation.AfterStep;
+import org.springframework.batch.core.annotation.BeforeStep;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.NonTransientResourceException;
+import org.springframework.batch.item.ParseException;
+import org.springframework.batch.item.UnexpectedInputException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
+
+@Configuration
+@Component
+public class EmployeeReader implements ItemReader<List<Employee>> {
+	Log log = LogFactory.getLog(EmployeeReader.class);
+
+	@Autowired
+	DataSource dataSource;
+	private ResultSet resultSet;
+	private Connection con;
+	private PreparedStatement preparedStatement;
+
+	private String query = "Select * from employee where Is_Sync ='No'";
+
+	@BeforeStep
+	public void beforeStep(StepExecution stepExecution) {
+
+		try {
+			con = dataSource.getConnection();
+			preparedStatement = con.prepareStatement(query);
+			resultSet = preparedStatement.executeQuery();
+		} catch (SQLException e) {
+			log.error("Error initializing database connection: " + e);
+		}
+	}
+
+	@Override
+	public List<Employee> read()
+			throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
+		List<Employee> emplist = new ArrayList<Employee>();
+		if (resultSet != null && resultSet.next()) {
+			emplist.add(mapRow(resultSet));
+			return emplist;
+		}
+		return null;
+	}
+
+	private Employee mapRow(ResultSet rs) throws SQLException {
+		Employee employee = new Employee();
+		employee.setEmployeeId(rs.getInt("EmployeeId"));
+		employee.setEmployeeName(rs.getString("EmployeeName"));
+		employee.setEmployeeSalary(rs.getDouble("EmployeeSalary"));
+		employee.setDate_Of_Joining(rs.getDate("date_Of_Joining"));
+		employee.setIs_Sync(rs.getString("Is_Sync"));
+		employee.setStatus(rs.getBoolean("Status"));
+		return employee;
+	}
+
+	@AfterStep
+	public ExitStatus afterStep(StepExecution stepExecution) {
+		try {
+			if (resultSet != null)
+				resultSet.close();
+			if (preparedStatement != null)
+				preparedStatement.close();
+			if (con != null)
+				con.close();
+		} catch (SQLException e) {
+			log.error("Error closing database resources: " + e);
+		}
+		return stepExecution.getExitStatus();
+	}
+}
+
+##################################################
+
+package com.springbatchdemo.stepclass;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class EmployeeProcessor implements ItemProcessor<List<Employee>, List<String>> {
+	Log log = LogFactory.getLog(EmployeeProcessor.class);
+
+	@Override
+	public List<String> process(List<Employee> employee) throws Exception {
+		List<String> empList = new ArrayList<String>();
+		for (Employee data : employee) {
+			String row = data.getEmployeeId() + "," + data.getEmployeeName() + "," + data.getEmployeeSalary() + ","
+					+ data.getDate_Of_Joining() + "," + data.getIs_Sync() + "," + data.isStatus();
+			empList.add(row);
+		}
+		return empList;
+	}
+
+}
+
+################################################
+
+
+package com.springbatchdemo.stepclass;
+
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.util.List;
+import javax.sql.DataSource;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.batch.item.Chunk;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+@Component
+public class EmployeeWriter implements ItemWriter<List<String>> {
+	Log log = LogFactory.getLog(EmployeeWriter.class);
+
+	@Autowired
+	DataSource dataSource;
+
+	@Override
+	public void write(Chunk<? extends List<String>> chunk) throws Exception {
+
+		String query = "update employee set Is_Sync =? , Status=? where EmployeeId =?";
+		boolean status = true;
+
+		try (BufferedWriter writer = new BufferedWriter(new FileWriter("file/Input/employee.csv"))) {
+			Connection con = dataSource.getConnection();
+			PreparedStatement pst = con.prepareStatement(query);
+			Employee employee = new Employee();
+			for (List<String> list : chunk) {
+				for (String data : list) {
+
+					String[] row = data.split(",");
+					int employeeId = Integer.parseInt(row[0]);
+
+					writer.write(data);
+					writer.newLine();
+					log.error("!!!!! Wrote into CSV !!!!!");
+
+					employee.setIs_Sync("Yes");
+					pst.setString(1, employee.getIs_Sync());
+					pst.setBoolean(2, status);
+					pst.setInt(3, employeeId);
+					pst.executeUpdate();
+				}
+			}
+
+			log.error("!!!!! Updated successfully !!!!!");
+			con.close();
+		} catch (Exception e) {
+			log.error("Unable to update", e);
+		}
+
+	}
+}
+
+###########################################
+
+package com.springbatchdemo.batchProcessing;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.ImportResource;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+
+@SpringBootApplication
+@EnableScheduling
+@EnableBatchProcessing
+@ImportResource("classpath:context.xml")
+public class BatchProcessingApplication implements CommandLineRunner {
+	Log log = LogFactory.getLog(BatchProcessingApplication.class);
+	@Autowired
+	JobLauncher jobLauncher;
+
+	@Autowired
+	Job job;
+
+	@Autowired
+	JobRepository jobRepository;
+
+	public static void main(String[] args) {
+		SpringApplication.run(BatchProcessingApplication.class, args);
+	}
+
+	@Override
+	public void run(String... args) throws Exception {
+		jobTrigger();
+
+	}
+
+	@Scheduled(cron = "0 */1 * ? * *")
+	public void jobTrigger() throws Exception {
+		JobParameters jobParameters = new JobParametersBuilder().addLong("time", System.currentTimeMillis())
+				.toJobParameters();
+
+		JobExecution execution = jobLauncher.run(job, jobParameters);
+		log.error("Job Exit Status : " + execution.getStatus());
+	}
+
+}
